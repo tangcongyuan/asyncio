@@ -13,7 +13,7 @@ class Proxy:
             time.sleep(0.5)
             logging.debug(f'queue size: {queue.qsize()}')
             msg = await queue.get()
-            logging.info(f'{time.time()} msg: {msg}')
+            logging.info(f'msg processed: {msg}')
             queue.task_done()
 
 
@@ -75,7 +75,8 @@ class Proxy:
         logging.debug('All done.')
 
 if __name__ == "__main__":
-    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
+    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG)
+    logging.addLevelName(logging.DEBUG, "\033[0;32m%s\033[0m" % logging.getLevelName(logging.DEBUG))
     logging.debug(f'Main thread id: {threading.get_ident()}')
 
     pro = Proxy()
