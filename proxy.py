@@ -17,7 +17,7 @@ class Proxy:
     async def worker(queue: asyncio.Queue) -> None:
         """ This forever-running worker needs to be handled when exiting asyncio loop. """
         while True:
-            time.sleep(0.5)
+            logging.debug(f'worker running...')
             logging.debug(f'queue size: {queue.qsize()}')
             msg = await queue.get()
             logging.info(f'msg processed: {msg}')
@@ -64,26 +64,25 @@ class Proxy:
 
 
     @staticmethod
-    async def exit(new_loop: asyncio.AbstractEventLoop,
-                         queue: asyncio.Queue) -> None:
+    async def exit() -> None:
         """ Stop the loop gracefully. """
         # Wait until all messages in queue are processed
-        logging.debug(f'queue: {queue}')
-        await queue.join()
-        for task in asyncio.Task.all_tasks(loop=new_loop):
+        logging.debug(f'Waiting for queue to join.')
+        await Proxy._queue.join()
+        for task in asyncio.Task.all_tasks(loop=Proxy._loop):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 logging.debug(f'task: {task}')
                 await task
-        logging.debug('Stop new_loop')
-        new_loop.stop()
+        logging.debug('Stop loop')
+        Proxy._loop.stop()
 
 
     @staticmethod
     def stop() -> None:
         logging.debug(f'Terminating new thread and loop from thread: {threading.get_ident()}')
-        asyncio.ensure_future(Proxy.exit(Proxy._loop, Proxy._queue),
-                              loop=Proxy._loop)
+        logging.debug(f'loop: {Proxy._loop}')
+        asyncio.run_coroutine_threadsafe(Proxy.exit(), loop=Proxy._loop)
         Proxy._thread.join()
         logging.debug('All done.')
 
