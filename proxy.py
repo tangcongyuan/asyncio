@@ -10,8 +10,8 @@ import time
 # Singleton class where class variables will only be instantiated once.
 class Proxy:
     # Class variable
-    _host: str
-    _port: int
+    _host: str = None
+    _port: int = None
     _loop: asyncio.AbstractEventLoop = None
     _queue: asyncio.Queue = None
     _thread: threading.Thread = None
@@ -92,11 +92,12 @@ class Proxy:
 
     @staticmethod
     def stop() -> None:
-        logging.debug(f'Terminating new thread and loop from thread: {threading.get_ident()}')
-        logging.debug(f'loop: {Proxy._loop}')
-        asyncio.run_coroutine_threadsafe(Proxy.exit(), loop=Proxy._loop)
-        Proxy._thread.join()
-        logging.debug('All done.')
+        if Proxy._loop.is_running():
+            logging.debug(f'Terminating new thread and loop from thread: {threading.get_ident()}')
+            logging.debug(f'loop: {Proxy._loop}')
+            asyncio.run_coroutine_threadsafe(Proxy.exit(), loop=Proxy._loop)
+            Proxy._thread.join()
+            logging.debug('All done.')
 
 
 if __name__ == "__main__":
@@ -110,4 +111,6 @@ if __name__ == "__main__":
         pro1.send(f'Proxy1 says hello with index: {index}')
         pro2.send(f'Proxy2 says hello with index: {index}')
     # time.sleep(3)
-    Proxy.stop()
+    # Proxy.stop()
+    pro1.stop()
+    pro2.stop()
