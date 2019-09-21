@@ -19,8 +19,7 @@ def server_start():
                 try:
                     data = conn.recv(MSG_SIZE)
                     print('Received', repr(data))
-                    if not data:
-                        time.sleep(1.0)
+                    if not data: break
                     conn.sendall(data)
                 except KeyboardInterrupt:
                     print('Stoping server.')
