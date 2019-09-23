@@ -1,32 +1,39 @@
-#! /usr/bin/env python3
-
+"""
+This is the proxy helps connect to another TCP server, and sends and retrieves
+data from it.
+"""
 import asyncio
 import contextlib
 import logging
-import socket
 import threading
-import typing
 
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-class AHisProxy:
+class ATcpProxy:
+    """
+    Proxy class.
+    """
     def __init__(self,
-                 host: str='127.0.0.1',
-                 port: int=65432) -> None:
-        self._logger: logging.Logger = logger
+                 host: str = '127.0.0.1',
+                 port: int = 65432) -> None:
+        self._logger: logging.Logger = LOGGER
         self._host: str = host
         self._port: int = port
-        self._thread: threading.Thread = threading.Thread(target=self._background_loop)
+        self._thread: threading.Thread = threading.Thread(
+            target=self._background_loop)
         self._loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
-        self._should_stop: bool = False
-        self._incoming_q: asyncio.Queue = asyncio.Queue(maxsize=1, loop=self._loop) # Stores incoming prescriptions
-        self._outgoing_q: asyncio.Queue = asyncio.Queue(maxsize=0, loop=self._loop) # Stores outgoing detected medicines
+        # asyncio.Queue is not natively threadsafe,
+        # by accessing it only inside async loop ensures zero race condition.
+        self._incoming_q: asyncio.Queue = asyncio.Queue(
+            maxsize=1, loop=self._loop)
+        self._outgoing_q: asyncio.Queue = asyncio.Queue(
+            maxsize=0, loop=self._loop)
         self._msg_size: int = 1024 # Should be configured by external file
         self._reader, self._writer = None, None
 
-        self._logger.debug(f'Thread starting.')
+        self._logger.debug('Thread starting.')
         self._thread.start()
 
 
@@ -39,12 +46,13 @@ class AHisProxy:
     async def _get_incoming_q(self):
         items = list(self._incoming_q._queue)
         self._incoming_q._queue.clear()
-        logger.debug(f'Incoming queue content: {items}')
+        self._logger.debug(f'Incoming queue content: {items}')
         return items
 
 
     @property
     def incoming_q(self):
+        """ Out-facing API for user to get incoming queue contents. """
         future = asyncio.run_coroutine_threadsafe(
             self._get_incoming_q(),
             self._loop
@@ -53,22 +61,24 @@ class AHisProxy:
 
 
     def send(self, data: bytes) -> None:
+        """ Synchronous sending. """
         future = asyncio.run_coroutine_threadsafe(
             self._outgoing_q.put(data),
             self._loop
         )
         future.result()
-        self._logger.debug(f'Data cached in outgoing queue, queue size: ' \
+        self._logger.debug(f'Data cached in outgoing queue, queue size: '
                            f'{self._outgoing_q.qsize()}')
 
 
     async def _send(self):
         """ Send data to HIS. """
-        while not self._should_stop:
+        while True:
             self._logger.debug(f'Calling async send.')
             item = await self._outgoing_q.get()
             self._logger.debug(f'Getting item from outgoing queue: {item}')
-            if not item: break
+            if not item:
+                break
             self._logger.debug(f'Writing item: {item}')
             self._writer.write(item)
             self._outgoing_q.task_done()
@@ -76,26 +86,30 @@ class AHisProxy:
 
     async def _read(self) -> None:
         """ Read data from HIS and store it to incoming queue. """
-        while not self._should_stop:
+        while True:
             self._logger.debug(f'Calling async read.')
             data = await self._reader.read(self._msg_size)
             self._logger.info('Received: %r' % data)
-            if not data: break
+            if not data:
+                break
 
             try:
                 self._incoming_q.put_nowait(data)
-                self._logger.debug(f'Adding received data to incoming queue, queue size: {self._incoming_q.qsize()}')
+                self._logger.debug(f'Adding received data to incoming queue, '
+                                   f'queue size: {self._incoming_q.qsize()}')
             except asyncio.QueueFull:
-                self._logger.error(f'self.incoming_queue is full; this should not happen!')
+                self._logger.error('self.incoming_queue is full; '
+                                   'this should not happen!')
 
 
     def _background_loop(self) -> None:
         """ Main function in new thread. """
-        self._logger.debug(f'Background loop running in child thread, thread id: {threading.get_ident()}')
+        self._logger.debug(f'Background loop running in child thread, '
+                           f'thread id: {threading.get_ident()}')
         con = asyncio.ensure_future(self._connect(), loop=self._loop)
         self._loop.run_until_complete(con)
         self._logger.debug('Connection established.')
-        future = asyncio.gather(
+        asyncio.gather(
             self._read(),
             self._send(),
             loop=self._loop,
@@ -107,7 +121,10 @@ class AHisProxy:
 
 
     async def _connect(self) -> None:
-        """ Write from outgoing queue to HIS; Read from HIS to incoming queue. """
+        """
+            Write from outgoing queue to HIS;
+            Read from HIS to incoming queue.
+        """
         self._logger.debug('Establishing TCP connection.')
         self._reader, self._writer = await asyncio.open_connection(
             self._host,
@@ -140,7 +157,7 @@ class AHisProxy:
 
 
 # Use this singleton instead of initiating new ones.
-proxy = AHisProxy()
+proxy = ATcpProxy()
 
 
 # For testing only
@@ -154,14 +171,15 @@ if __name__ == "__main__":
     logging.addLevelName(
         logging.ERROR,
         "\033[0;31m%s\033[0m" % logging.getLevelName(logging.ERROR))
-    logger.debug(f'Main thread id: {threading.get_ident()}')
+    LOGGER.debug(f'Main thread id: {threading.get_ident()}')
 
     from datetime import datetime
     import time
     for index in range(10):
         data = f'[{str(datetime.now())}]: Hello proxy {index}.'
         proxy.send(data.encode())
-        # Current server only echo data back; meaning client receives data after sending one.
-        logger.debug(f'Incoming queue: {proxy.incoming_q}')
+        # Current server only echo data back;
+        # meaning client receives data after sending one.
+        LOGGER.debug(f'Incoming queue: {proxy.incoming_q}')
     time.sleep(3.0)
     proxy.stop()
